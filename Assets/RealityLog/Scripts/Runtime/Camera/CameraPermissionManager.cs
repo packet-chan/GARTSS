@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace RealityLog.Camera
 {
-    class CameraPermissionManager : MonoBehaviour
+    public class CameraPermissionManager : MonoBehaviour
     {
         private const float CAMERA_MANAGER_CHECK_INTERVAL = 0.1f;
 
