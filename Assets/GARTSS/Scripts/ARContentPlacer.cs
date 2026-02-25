@@ -1,6 +1,5 @@
 // Assets/GARTSS/Scripts/ARContentPlacer.cs
 // サーバーから返された3D座標にARコンテンツを配置する
-// Phase 4 で本格的に作り込むが、Phase 2 の時点でデバッグ表示に使える
 
 using System.Collections.Generic;
 using UnityEngine;
@@ -10,44 +9,47 @@ namespace GARTSS
     public class ARContentPlacer : MonoBehaviour
     {
         [Header("Prefabs")]
-        [Tooltip("デバッグ用の3Dマーカー (Sphere等)")]
+        [Tooltip("デバッグ用の3Dマーカー (未設定ならCubeを自動生成)")]
         [SerializeField] private GameObject debugMarkerPrefab;
-        [Tooltip("テキストラベル用プレハブ")]
-        [SerializeField] private GameObject textLabelPrefab;
 
         [Header("Settings")]
-        [SerializeField] private float markerScale = 0.02f;
+        [SerializeField] private float markerScale = 0.05f;
 
         private readonly List<GameObject> placedObjects = new();
 
         /// <summary>
-        /// Unityワールド座標に3Dマーカーを配置
+        /// Unityワールド座標にCubeを配置
         /// </summary>
         public GameObject PlaceMarker(Vector3 worldPosition, string label = "")
         {
-            var prefab = debugMarkerPrefab;
-            if (prefab == null)
+            GameObject marker;
+
+            if (debugMarkerPrefab != null)
             {
-                // プレハブ未設定の場合はSphereを自動生成
-                prefab = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                prefab.transform.localScale = Vector3.one * markerScale;
-                var renderer = prefab.GetComponent<Renderer>();
+                marker = Instantiate(debugMarkerPrefab, worldPosition, Quaternion.identity);
+            }
+            else
+            {
+                // Cubeを自動生成
+                marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                marker.transform.position = worldPosition;
+                var renderer = marker.GetComponent<Renderer>();
                 if (renderer != null)
                 {
-                    renderer.material.color = Color.red;
+                    // URP対応のマテリアルを作成
+                    var mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+                    mat.color = new Color(0f, 1f, 0f, 0.7f);
+                    renderer.material = mat;
                 }
-                // テンプレートとして使うので非アクティブに
-                prefab.SetActive(false);
             }
 
-            var marker = Instantiate(prefab, worldPosition, Quaternion.identity);
             marker.transform.localScale = Vector3.one * markerScale;
             marker.SetActive(true);
             marker.name = string.IsNullOrEmpty(label) ? "ARMarker" : $"AR_{label}";
 
             placedObjects.Add(marker);
 
-            Debug.Log($"[ARContentPlacer] Placed '{marker.name}' at {worldPosition}");
+            Debug.Log($"[ARPlacer] Placed '{marker.name}' at {worldPosition}");
             return marker;
         }
 
@@ -60,12 +62,16 @@ namespace GARTSS
 
             foreach (var obj in response.objects)
             {
-                if (obj.ar_placement?.world_position == null) continue;
+                if (obj.center_3d == null || obj.center_3d.Length < 3)
+                {
+                    Debug.LogWarning($"[ARPlacer] Object '{obj.name}' has no 3D coordinate");
+                    continue;
+                }
 
                 var pos = new Vector3(
-                    obj.ar_placement.world_position[0],
-                    obj.ar_placement.world_position[1],
-                    obj.ar_placement.world_position[2]);
+                    obj.center_3d[0],
+                    obj.center_3d[1],
+                    obj.center_3d[2]);
 
                 PlaceMarker(pos, obj.name);
             }
@@ -81,6 +87,7 @@ namespace GARTSS
                 if (obj != null) Destroy(obj);
             }
             placedObjects.Clear();
+            Debug.Log("[ARPlacer] All objects cleared");
         }
     }
 }

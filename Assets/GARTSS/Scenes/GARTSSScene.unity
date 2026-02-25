@@ -232,6 +232,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   orchestrator: {fileID: 992039404}
   client: {fileID: 992039405}
+  placer: {fileID: 992039403}
+  analyzeTask: Detect only the flat perforated drip tray surface at the base of the
+    coffee machine. The tray is horizontal and wider than it is tall. Return a wide
+    horizontal bounding box.
   statusText: {fileID: 0}
 --- !u!114 &992039402
 MonoBehaviour:
@@ -247,7 +251,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   cameraPermissionManager: {fileID: 515875956}
   orchestrator: {fileID: 992039404}
-  rgbCamera: {fileID: 0}
+  rgbCamera: {fileID: 992039407}
   imageReaderProvider: {fileID: 1672366202}
 --- !u!114 &992039403
 MonoBehaviour:
@@ -262,8 +266,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   debugMarkerPrefab: {fileID: 0}
-  textLabelPrefab: {fileID: 0}
-  markerScale: 0.02
+  markerScale: 0.05
 --- !u!114 &992039404
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -278,6 +281,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   client: {fileID: 992039405}
   imageReaderProvider: {fileID: 1672366202}
+  cameraSessionManager: {fileID: 1672366201}
   rgbCamera: {fileID: 992039407}
   captureInterval: 0.5
   maxCaptures: 3
