@@ -48,6 +48,7 @@ namespace GARTSS
             float fx, float fy, float cx, float cy,
             int imageWidth, int imageHeight)
         {
+            Debug.Log($"[GARTSS] InitSession called. URL={serverUrl}");
             var request = new SessionInitRequest
             {
                 camera_characteristics = new CameraCharacteristicsData
@@ -136,7 +137,7 @@ namespace GARTSS
                 form.Add(new MultipartFormFileSection("rgb_image", rgbPng, "rgb.png", "image/png"));
             }
 
-            using var request = UnityWebRequest.Post(url, form);
+            var request = UnityWebRequest.Post(url, form);
             request.timeout = 30;
 
             yield return request.SendWebRequest();
@@ -194,7 +195,7 @@ namespace GARTSS
         private IEnumerator GetDepth(float u, float v, Action<DepthQueryResponse> onResult)
         {
             var url = $"{serverUrl}/session/{sessionId}/depth?u={u}&v={v}";
-            using var request = UnityWebRequest.Get(url);
+            var request = UnityWebRequest.Get(url);
             request.timeout = 10;
 
             yield return request.SendWebRequest();
@@ -231,7 +232,8 @@ namespace GARTSS
 
         private IEnumerator PostJson<TResponse>(string url, string jsonBody, Action<TResponse> onSuccess)
         {
-            using var request = new UnityWebRequest(url, "POST");
+            Debug.Log($"[GARTSS] POST {url} body={jsonBody.Substring(0, Mathf.Min(200, jsonBody.Length))}");
+            var request = new UnityWebRequest(url, "POST");
             var bodyBytes = Encoding.UTF8.GetBytes(jsonBody);
             request.uploadHandler = new UploadHandlerRaw(bodyBytes);
             request.downloadHandler = new DownloadHandlerBuffer();
@@ -246,11 +248,14 @@ namespace GARTSS
                 Debug.LogError($"[GARTSS] {error}");
                 lastStatus = error;
                 OnError?.Invoke(error);
+                request.Dispose();
                 yield break;
             }
 
+            Debug.Log($"[GARTSS] POST {url} success: {request.downloadHandler.text}");
             var response = JsonUtility.FromJson<TResponse>(request.downloadHandler.text);
             onSuccess?.Invoke(response);
+            request.Dispose();
         }
     }
 

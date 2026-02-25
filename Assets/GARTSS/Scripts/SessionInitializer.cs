@@ -10,19 +10,40 @@ namespace GARTSS
     {
         [SerializeField] private CameraPermissionManager cameraPermissionManager;
         [SerializeField] private CaptureOrchestrator orchestrator;
+        [SerializeField] private RGBCameraCapture rgbCamera;
+        [SerializeField] private ImageReaderSurfaceProvider imageReaderProvider;
 
         private bool initialized = false;
 
         private void Update()
         {
             if (initialized) return;
-            if (!cameraPermissionManager.HasCameraManager) return;
+
+            if (cameraPermissionManager == null)
+            {
+                Debug.LogError("[GARTSS] SessionInitializer: cameraPermissionManager is NULL!");
+                return;
+            }
+
+            if (!cameraPermissionManager.HasCameraManager)
+            {
+                return;  // ここは毎フレーム来るのでログは出さない
+            }
 
             var metaData = cameraPermissionManager.LeftCameraMetaData;
-            if (metaData == null) return;
+            if (metaData == null)
+            {
+                Debug.LogWarning("[GARTSS] SessionInitializer: LeftCameraMetaData is null");
+                return;
+            }
 
-            Debug.Log($"[SessionInit] Camera ready: {metaData}");
+            Debug.Log($"[GARTSS] Camera ready, calling InitializeSession...");
 
+            if (imageReaderProvider != null)
+            {
+                imageReaderProvider.DataDirectoryName = "_gartss_rgb";
+            }
+            
             orchestrator.InitializeSession(
                 camPoseTranslation: metaData.pose.translation,
                 camPoseRotation: metaData.pose.rotation,
@@ -34,6 +55,12 @@ namespace GARTSS
                 imgHeight: metaData.sensor.pixelArraySize.height
             );
 
+            if (rgbCamera != null)
+            {
+                rgbCamera.StartCamera();
+            }
+
+            Debug.Log($"[GARTSS] InitializeSession called successfully");
             initialized = true;
         }
     }

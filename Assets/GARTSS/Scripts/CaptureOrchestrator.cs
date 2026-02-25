@@ -1,13 +1,4 @@
 // Assets/GARTSS/Scripts/CaptureOrchestrator.cs
-// QuestRealityCapture の既存コンポーネントからデータを集めてサーバーに送信する
-// 
-// 使い方:
-//   1. シーンに空のGameObjectを作成し、このスクリプトをアタッチ
-//   2. Inspector で各参照を設定
-//   3. スタートボタン押下 → StartCapture() を呼ぶ
-//
-// 既存の DepthMapExporter, PoseLogger はファイル保存用にそのまま残してもよいし、
-// 不要なら無効化してもよい。このスクリプトは独立して動く。
 
 using System;
 using System.Collections;
@@ -15,6 +6,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 using RealityLog.Depth;
+using RealityLog.Camera;
+using System.IO;
 
 namespace GARTSS
 {
@@ -22,6 +15,9 @@ namespace GARTSS
     {
         [Header("References")]
         [SerializeField] private GARTSSClient client;
+        [SerializeField] private ImageReaderSurfaceProvider imageReaderProvider;
+        [SerializeField] private CameraSessionManager cameraSessionManager;
+        [SerializeField] private RGBCameraCapture rgbCamera;
 
         [Header("Capture Settings")]
         [Tooltip("キャプチャ間隔 (秒)")]
@@ -44,14 +40,22 @@ namespace GARTSS
         private DepthDataExtractor depthDataExtractor;
         private ComputeShader copyDepthMapShader;
 
-        // Time conversion (PoseLoggerと同じロジック)
+        // Time conversion
         private double baseOvrTimeSec;
         private long baseUnixTimeMs;
 
-        // HMDポーズバッファ (直近N個を保持)
+        // HMDポーズバッファ
         private readonly List<HMDPoseData> poseBuffer = new();
         private const int POSE_BUFFER_SIZE = 50;
         private double latestPoseTimestamp;
+
+        // OnBeforeRender用: Depthフレームを一時保持
+        private bool depthCaptureRequested = false;
+        private bool depthCaptureReady = false;
+        private RenderTexture latestDepthRT;
+        private DepthFrameDesc latestDepthDesc;
+        private int latestDepthWidth;
+        private int latestDepthHeight;
 
         private void Start()
         {
@@ -60,43 +64,81 @@ namespace GARTSS
 
             depthDataExtractor = new DepthDataExtractor();
 
+            // Scene permission をリクエスト（Depth API に必要）
+            UnityEngine.Android.Permission.RequestUserPermission("com.oculus.permission.USE_SCENE");
+
             Debug.Log($"[CaptureOrch] Base OVR Time: {baseOvrTimeSec}, Base Unix Time: {baseUnixTimeMs}");
+        }
+
+        private void OnEnable()
+        {
+            Application.onBeforeRender += OnBeforeRender;
+        }
+
+        private void OnDisable()
+        {
+            Application.onBeforeRender -= OnBeforeRender;
         }
 
         private void FixedUpdate()
         {
-            // HMDポーズを常時バッファリング (PoseLoggerと同じ取得方法)
             BufferHMDPose();
+        }
+
+        /// <summary>
+        /// レンダリングループ内でDepthフレームを取得。
+        /// xrAcquireEnvironmentDepthImage はこのタイミングでしか呼べない。
+        /// </summary>
+        [BeforeRenderOrder(100)]
+        private void OnBeforeRender()
+        {
+            if (!depthCaptureRequested || depthDataExtractor == null)
+                return;
+
+            if (depthDataExtractor.TryGetUpdatedDepthTexture(out var depthRT, out var frameDescs))
+            {
+                latestDepthRT = depthRT;
+                latestDepthDesc = frameDescs[0]; // left eye
+                latestDepthWidth = depthRT.width;
+                latestDepthHeight = depthRT.height;
+                depthCaptureReady = true;
+            }
         }
 
         // =============================================================
         //  Public API
         // =============================================================
 
-        /// <summary>
-        /// camera_characteristics.json の内容でセッション初期化。
-        /// CameraPermissionManager の CameraMetaData から値を取得して呼ぶ。
-        /// </summary>
         public void InitializeSession(
             float[] camPoseTranslation,
             float[] camPoseRotation,
             float camFx, float camFy, float camCx, float camCy,
             int imgWidth, int imgHeight)
         {
-            poseTranslation = camPoseTranslation;
-            poseRotation = camPoseRotation;
-            fx = camFx; fy = camFy; cx = camCx; cy = camCy;
-            imageWidth = imgWidth; imageHeight = imgHeight;
+            try
+            {
+                Debug.Log($"[GARTSS] Orchestrator.InitializeSession called");
 
-            client.InitSession(
-                poseTranslation, poseRotation,
-                fx, fy, cx, cy,
-                imageWidth, imageHeight);
+                poseTranslation = camPoseTranslation;
+                poseRotation = camPoseRotation;
+                fx = camFx; fy = camFy; cx = camCx; cy = camCy;
+                imageWidth = imgWidth; imageHeight = imgHeight;
+
+                Debug.Log($"[GARTSS] Calling client.InitSession, client={client}, url={client?.ServerUrl}");
+
+                client.InitSession(
+                    poseTranslation, poseRotation,
+                    fx, fy, cx, cy,
+                    imageWidth, imageHeight);
+
+                Debug.Log($"[GARTSS] client.InitSession called");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[GARTSS] InitializeSession EXCEPTION: {e}");
+            }
         }
 
-        /// <summary>
-        /// キャプチャ開始。ユーザーがスタートボタンを押した時に呼ぶ。
-        /// </summary>
         public void StartCapture()
         {
             if (!client.IsInitialized)
@@ -115,12 +157,10 @@ namespace GARTSS
             StartCoroutine(CaptureSequence());
         }
 
-        /// <summary>
-        /// キャプチャ停止
-        /// </summary>
         public void StopCapture()
         {
             isCapturing = false;
+            depthCaptureRequested = false;
             depthDataExtractor?.SetDepthEnabled(false);
         }
 
@@ -134,7 +174,7 @@ namespace GARTSS
             captureCount = 0;
 
             // Depth APIが安定するまで少し待つ
-            yield return new WaitForSeconds(0.3f);
+            yield return new WaitForSeconds(0.5f);
 
             while (isCapturing && captureCount < maxCaptures)
             {
@@ -148,41 +188,54 @@ namespace GARTSS
             }
 
             isCapturing = false;
+            depthCaptureRequested = false;
             depthDataExtractor?.SetDepthEnabled(false);
             Debug.Log($"[CaptureOrch] Capture sequence complete: {captureCount} frames");
         }
 
         private IEnumerator CaptureOneFrame()
         {
-            // --- 1. Depthフレーム取得 ---
-            if (!depthDataExtractor.TryGetUpdatedDepthTexture(
-                    out var depthRT, out var frameDescs))
+            // --- 1. OnBeforeRenderでDepthフレームを取得するようリクエスト ---
+            depthCaptureReady = false;
+            depthCaptureRequested = true;
+
+            // フレームが取得できるまで待つ (最大1秒)
+            float timeout = 1.0f;
+            float elapsed = 0f;
+            while (!depthCaptureReady && elapsed < timeout)
+            {
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            depthCaptureRequested = false;
+
+            if (!depthCaptureReady || latestDepthRT == null)
             {
                 Debug.LogWarning("[CaptureOrch] No depth frame available");
                 yield break;
             }
 
-            var leftDesc = frameDescs[0]; // left eye
-            int depthWidth = depthRT.width;
-            int depthHeight = depthRT.height;
+            var depthDesc = latestDepthDesc;
+            int depthWidth = latestDepthWidth;
+            int depthHeight = latestDepthHeight;
+            var depthRT = latestDepthRT;
 
             // タイムスタンプ変換
-            long depthUnixMs = ConvertTimestampNsToUnixTimeMs(leftDesc.timestampNs);
+            long depthUnixMs = ConvertTimestampNsToUnixTimeMs(depthDesc.timestampNs);
 
             // DepthDescriptor作成
             var depthDescriptor = DepthDescriptorData.FromDepthFrameDesc(
-                leftDesc, depthUnixMs, depthWidth, depthHeight);
+                depthDesc, depthUnixMs, depthWidth, depthHeight);
 
             // --- 2. Depth NDCバッファをGPUから読み出し ---
             byte[] depthRawBytes = null;
             bool readbackDone = false;
 
-            // ComputeShader で左目のDepthを取得
-            // DepthRenderTextureExporterと同様のロジックだが、ファイル保存ではなくバイト配列に
             var pixelCount = depthWidth * depthHeight;
             var buffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, pixelCount, sizeof(float));
+            var dummyBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, pixelCount, sizeof(float));
 
-            // CopyDepthMap compute shader を使用
             if (copyDepthMapShader == null)
             {
                 copyDepthMapShader = Resources.Load<ComputeShader>("CopyDepthMap");
@@ -190,6 +243,7 @@ namespace GARTSS
                 {
                     Debug.LogError("[CaptureOrch] CopyDepthMap compute shader not found");
                     buffer.Dispose();
+                    dummyBuffer.Dispose();
                     yield break;
                 }
             }
@@ -197,6 +251,7 @@ namespace GARTSS
             int kernel = copyDepthMapShader.FindKernel("CopyRT");
             copyDepthMapShader.SetTexture(kernel, "InputTex", depthRT);
             copyDepthMapShader.SetBuffer(kernel, "LeftEyeDepth", buffer);
+            copyDepthMapShader.SetBuffer(kernel, "RightEyeDepth", dummyBuffer);
             copyDepthMapShader.SetInt("_Width", depthWidth);
             copyDepthMapShader.SetInt("_Height", depthHeight);
 
@@ -210,7 +265,7 @@ namespace GARTSS
                 {
                     var data = request.GetData<float>();
                     depthRawBytes = new byte[data.Length * sizeof(float)];
-                    Buffer.BlockCopy(data.ToArray(), 0, depthRawBytes, 0, depthRawBytes.Length);
+                    System.Buffer.BlockCopy(data.ToArray(), 0, depthRawBytes, 0, depthRawBytes.Length);
                 }
                 else
                 {
@@ -219,11 +274,11 @@ namespace GARTSS
                 readbackDone = true;
             });
 
-            // Readback完了を待つ
             while (!readbackDone)
                 yield return null;
 
             buffer.Dispose();
+            dummyBuffer.Dispose();
 
             if (depthRawBytes == null)
             {
@@ -231,13 +286,53 @@ namespace GARTSS
                 yield break;
             }
 
-            // --- 3. RGB画像取得 ---
-            // TODO: CameraSessionManager の ImageReader から取得する実装
-            // 暫定: パススルーカメラのスクリーンショットまたは null
+            // --- 3. RGB画像 ---
             byte[] rgbPng = null;
-            // rgbPng = GetRGBImageFromCamera(); // Phase3で実装
+            if (imageReaderProvider != null)
+            {
+                var tempDir = Path.Combine(Application.persistentDataPath,
+                    imageReaderProvider.DataDirectoryName, "left_camera_raw");
 
-            // --- 4. HMDポーズ (バッファから直近のものを取得) ---
+                // 既存ファイル削除
+                if (Directory.Exists(tempDir))
+                {
+                    foreach (var f in new DirectoryInfo(tempDir).GetFiles())
+                    {
+                        try { f.Delete(); } catch { }
+                    }
+                }
+
+                // 保存オン → 1フレーム待つ → 保存オフ
+                imageReaderProvider.SetSaveEnabled(true);
+                yield return new WaitForSeconds(0.15f);
+                imageReaderProvider.SetSaveEnabled(false);
+
+                // 保存されたファイルを読む
+                if (Directory.Exists(tempDir))
+                {
+                    var files = new DirectoryInfo(tempDir).GetFiles();
+                    FileInfo latest = null;
+                    foreach (var f in files)
+                    {
+                        if (latest == null || f.LastWriteTime > latest.LastWriteTime)
+                            latest = f;
+                    }
+
+                    if (latest != null && latest.Exists)
+                    {
+                        rgbPng = File.ReadAllBytes(latest.FullName);
+                        Debug.Log($"[CaptureOrch] RGB loaded: {rgbPng.Length} bytes");
+                    }
+
+                    // 全ファイル削除
+                    foreach (var f in files)
+                    {
+                        try { f.Delete(); } catch { }
+                    }
+                }
+            }
+
+            // --- 4. HMDポーズ ---
             var hmdPoses = GetRecentPoses(depthUnixMs);
 
             // --- 5. サーバーに送信 ---
@@ -266,7 +361,6 @@ namespace GARTSS
             var position = pose.position;
             var orientation = pose.orientation;
 
-            // TrackingSpaceがある場合はワールド座標に変換
             var trackingSpace = OVRManager.instance?.transform;
             if (trackingSpace != null)
             {
@@ -288,25 +382,19 @@ namespace GARTSS
                 rot_w = orientation.w,
             });
 
-            // バッファサイズ制限
             while (poseBuffer.Count > POSE_BUFFER_SIZE)
             {
                 poseBuffer.RemoveAt(0);
             }
         }
 
-        /// <summary>
-        /// 指定タイムスタンプ前後のHMDポーズを取得。
-        /// サーバー側のPoseInterpolatorが補間するので、前後数個あれば十分。
-        /// </summary>
         private HMDPoseData[] GetRecentPoses(long targetTimestampMs)
         {
             if (poseBuffer.Count == 0)
                 return Array.Empty<HMDPoseData>();
 
-            // targetの前後を含む範囲を返す (最大20個)
             const int MAX_POSES = 20;
-            const long MARGIN_MS = 200; // ±200ms
+            const long MARGIN_MS = 200;
 
             long tMin = targetTimestampMs - MARGIN_MS;
             long tMax = targetTimestampMs + MARGIN_MS;
@@ -322,7 +410,6 @@ namespace GARTSS
                 }
             }
 
-            // 範囲内のポーズがなければバッファ全体から最も近いものを返す
             if (result.Count == 0)
             {
                 return poseBuffer.ToArray();

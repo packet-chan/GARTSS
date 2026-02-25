@@ -53,6 +53,7 @@
   <Project Path="Oculus.Interaction.OVR.Editor.csproj" />
   <Project Path="Unity.Burst.Editor.csproj" />
   <Project Path="Meta.XR.Editor.Tags.csproj" />
+  <Project Path="Unity.Mobile.AndroidLogcat.Editor.csproj" />
   <Project Path="Unity.Rider.Editor.csproj" />
   <Project Path="Unity.XR.ARFoundation.VisualScripting.csproj" />
   <Project Path="Unity.VisualScripting.State.csproj" />
@@ -89,6 +90,7 @@
   <Project Path="Meta.XR.EnvironmentDepth.csproj" />
   <Project Path="Assembly-CSharp-Editor.csproj" />
   <Project Path="Meta.XR.Editor.Settings.csproj" />
+  <Project Path="RealityLog.csproj" />
   <Project Path="Unity.XR.MetaOpenXR.Editor.csproj" />
   <Project Path="Meta.XR.Editor.Id.csproj" />
   <Project Path="Unity.InputSystem.TestFramework.csproj" />
@@ -97,7 +99,6 @@
   <Project Path="Meta.XR.BuildingBlocks.DepthAPI.csproj" />
   <Project Path="Unity.VisualScripting.Shared.Editor.csproj" />
   <Project Path="Meta.XR.EnvironmentDepth.Editor.csproj" />
-  <Project Path="RealityLog.csproj" />
   <Project Path="NewAssembly.csproj" />
   <Project Path="Unity.XR.ARFoundation.InternalUtils.csproj" />
   <Project Path="Unity.XR.ARFoundation.Editor.csproj" />
