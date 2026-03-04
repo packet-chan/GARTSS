@@ -164,11 +164,11 @@ namespace GARTSS
         /// <summary>
         /// LLM + SAM による画像解析を要求 (Phase 3)
         /// </summary>
-        public void RequestAnalyze(string task)
+        public void RequestAnalyze()
         {
             if (!isInitialized) return;
 
-            var body = JsonUtility.ToJson(new AnalyzeRequest { task = task });
+            var body = "{}";
             StartCoroutine(PostJson<AnalyzeResponse>(
                 $"{serverUrl}/session/{sessionId}/analyze",
                 body,

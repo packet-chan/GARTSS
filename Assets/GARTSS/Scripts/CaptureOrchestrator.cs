@@ -433,5 +433,26 @@ namespace GARTSS
             var deltaMs = (long)(timestampNs / 1.0e6 - baseOvrTimeSec * 1000.0);
             return baseUnixTimeMs + deltaMs;
         }
+
+        // =============================================================
+        //  Reconnector
+        // =============================================================
+
+        private void OnApplicationPause(bool pauseStatus)
+        {
+            if (!pauseStatus)
+            {
+                Debug.Log("[CaptureOrch] App resumed");
+                // カメラが再初期化されるのを待つだけで、強制再接続はしない
+                StartCoroutine(WaitForCameraReconnect());
+            }
+        }
+
+        private System.Collections.IEnumerator WaitForCameraReconnect()
+        {
+            // カメラの再初期化を2秒待つ
+            yield return new WaitForSeconds(2.0f);
+            Debug.Log("[CaptureOrch] Camera reconnect wait complete");
+        }
     }
 }

@@ -57,7 +57,7 @@ namespace RealityLog.Camera
                 formatInfoFilePath,
                 bufferPoolSize
             );
-            currentInstance?.Call(SET_SHOULD_SAVE_FRAME_METHOD_NAME, true);
+            currentInstance?.Call(SET_SHOULD_SAVE_FRAME_METHOD_NAME, false);
 
             return currentInstance;
         }

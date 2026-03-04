@@ -233,10 +233,6 @@ MonoBehaviour:
   orchestrator: {fileID: 992039404}
   client: {fileID: 992039405}
   placer: {fileID: 992039403}
-  analyzeTask: Detect only the flat perforated drip tray surface at the base of the
-    coffee machine. The tray is horizontal and wider than it is tall. Return a wide
-    horizontal bounding box.
-  statusText: {fileID: 0}
 --- !u!114 &992039402
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -265,8 +261,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d9988ffa09c65cf439b7d9f5d341baf6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  debugMarkerPrefab: {fileID: 0}
-  markerScale: 0.05
+  markerPrefab: {fileID: 5764098527576568055, guid: dd108fffcd67dd24e810a478ab04dce8, type: 3}
 --- !u!114 &992039404
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -307,7 +302,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 999354484161e68498f3e20f2d491c19, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  serverUrl: http://172.16.71.42:8000
+  serverUrl: http://10.136.75.42:8000
   sessionId: 
   isInitialized: 0
   lastStatus: 

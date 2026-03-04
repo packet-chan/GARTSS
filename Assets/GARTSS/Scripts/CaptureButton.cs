@@ -1,5 +1,5 @@
 // Assets/GARTSS/Scripts/CaptureButton.cs
-// Aボタン: キャプチャ → Analyze → Cube配置
+// Aボタン: キャプチャ → Analyze → AR配置
 // Bボタン: ARコンテンツをクリア
 
 using UnityEngine;
@@ -12,40 +12,28 @@ namespace GARTSS
         [SerializeField] private GARTSSClient client;
         [SerializeField] private ARContentPlacer placer;
 
-        [Header("Analyze Settings")]
-        [Tooltip("Gemini APIに送るタスク指示")]
-        [SerializeField] private string analyzeTask = "Detect the coffee machine tray";
-
-        [Header("Debug UI (Optional)")]
-        [SerializeField] private TMPro.TextMeshProUGUI statusText;
-
         private bool waitingForCapture = false;
 
         private void Update()
         {
-            // Aボタン: キャプチャ開始
             if (OVRInput.GetDown(OVRInput.Button.One))
             {
                 if (!client.IsInitialized)
                 {
                     Debug.LogWarning("[CaptureButton] Session not yet initialized");
-                    SetStatus("Waiting for session...");
                     return;
                 }
 
                 Debug.Log("[CaptureButton] Starting capture");
-                SetStatus("Capturing...");
                 waitingForCapture = true;
                 orchestrator.StartCapture();
             }
 
-            // Bボタン: ARコンテンツをクリア
             if (OVRInput.GetDown(OVRInput.Button.Two))
             {
                 if (placer != null)
                 {
                     placer.ClearAll();
-                    SetStatus("Cleared");
                 }
             }
         }
@@ -72,58 +60,28 @@ namespace GARTSS
 
         private void OnCaptureComplete(CaptureResponse response)
         {
-            SetStatus($"Coverage: {response.coverage}%");
-
-            // 最後のキャプチャが完了したら自動的にAnalyzeを実行
             if (waitingForCapture)
             {
                 waitingForCapture = false;
-                Debug.Log($"[CaptureButton] Capture done, starting analyze: {analyzeTask}");
-                SetStatus("Analyzing...");
-                client.RequestAnalyze(analyzeTask);
+                Debug.Log("[CaptureButton] Capture done, requesting analyze");
+                client.RequestAnalyze();
             }
         }
 
         private void OnAnalyzeComplete(AnalyzeResponse response)
         {
-            Debug.Log($"[CaptureButton] Analyze result: {response.objects?.Length ?? 0} objects");
+            Debug.Log($"[CaptureButton] Analyze: {response.objects?.Length ?? 0} objects");
 
-            if (response.objects != null && response.objects.Length > 0)
+            if (response.objects != null && response.objects.Length > 0 && placer != null)
             {
-                if (placer != null)
-                {
-                    placer.PlaceDetectedObjects(response);
-                }
-
-                var obj = response.objects[0];
-                if (obj.center_3d != null && obj.center_3d.Length == 3)
-                {
-                    SetStatus($"Found: {obj.name} at ({obj.center_3d[0]:F2}, {obj.center_3d[1]:F2}, {obj.center_3d[2]:F2})");
-                }
-                else
-                {
-                    SetStatus($"Found: {obj.name} (no 3D)");
-                }
-            }
-            else
-            {
-                SetStatus("No objects found");
+                placer.PlaceDetectedObjects(response);
             }
         }
 
         private void OnError(string error)
         {
-            SetStatus($"Error: {error}");
+            Debug.LogError($"[CaptureButton] {error}");
             waitingForCapture = false;
-        }
-
-        private void SetStatus(string text)
-        {
-            Debug.Log($"[CaptureButton] Status: {text}");
-            if (statusText != null)
-            {
-                statusText.text = text;
-            }
         }
     }
 }
